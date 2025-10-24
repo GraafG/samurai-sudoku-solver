@@ -226,6 +226,32 @@ function solveBacktrack(){
 const gridEl = document.getElementById('grid');
 let globalCells = []; // 21x21 or 9x9 references to Cell or null
 
+function computeThickEdges(cell, neighborLookup){
+  const edges = { left: false, top: false, right: false, bottom: false };
+  if (!cell || !Array.isArray(cell.memberships)) return edges;
+  // Inspect every board membership so shared cells inherit subgrid boundaries.
+  for (const { r, c } of cell.memberships) {
+    if (c === 0 || c === 3 || c === 6) edges.left = true;
+    if (r === 0 || r === 3 || r === 6) edges.top = true;
+    if (edges.left && edges.top) break;
+  }
+  // Close the outline whenever no neighbour exists to contribute its own line.
+  if (typeof neighborLookup === 'function') {
+    if (!neighborLookup(0, 1)) edges.right = true;
+    if (!neighborLookup(1, 0)) edges.bottom = true;
+  }
+  return edges;
+}
+
+function applyThickEdges(cellDiv, edges){
+  const shadows = ['inset 0 0 0 1px var(--grid)'];
+  if (edges.left) shadows.push('inset -3px 0 0 0 var(--thick)');
+  if (edges.top) shadows.push('inset 0 -3px 0 0 var(--thick)');
+  if (edges.right) shadows.push('inset 3px 0 0 0 var(--thick)');
+  if (edges.bottom) shadows.push('inset 0 3px 0 0 var(--thick)');
+  cellDiv.style.boxShadow = shadows.join(', ');
+}
+
 function buildUI(){
   gridEl.innerHTML = '';
   
@@ -237,14 +263,13 @@ function buildUI(){
         const cellObj = boards.A.cells[r][c];
         const cellDiv = document.createElement('div');
         cellDiv.className = 'cell';
-        
-        // Thick lines at 3x3 box boundaries (after cells 2, 5)
-        const vline = (c === 3 || c === 6);
-        const hline = (r === 3 || r === 6);
-        const cross = vline && hline;
-        if(vline) cellDiv.dataset.vline = 'true';
-        if(hline) cellDiv.dataset.hline = 'true';
-        if(cross) cellDiv.dataset.cross = 'true';
+        const edges = computeThickEdges(cellObj, (dR, dC) => {
+          const nr = r + dR;
+          const nc = c + dC;
+          if (nr < 0 || nr >= 9 || nc < 0 || nc >= 9) return null;
+          return boards.A.cells[nr][nc];
+        });
+        applyThickEdges(cellDiv, edges);
 
         const input = document.createElement('input');
         input.inputMode = 'numeric';
@@ -275,38 +300,8 @@ function buildUI(){
           continue;
         }
         cellDiv.className = 'cell';
-        
-        // Determine which 9x9 block this cell belongs to based on global position
-        // This must be done BEFORE cell data to get correct borders
-        let localR = -1, localC = -1;
-        
-        // Determine block based on global position (order matters for overlap)
-        if (r < 9 && c < 9) {
-          // Block A (top-left) - rows 0-8, cols 0-8
-          localR = r; localC = c;
-        } else if (r < 9 && c >= 12) {
-          // Block B (top-right) - rows 0-8, cols 12-20
-          localR = r; localC = c - 12;
-        } else if (r >= 12 && c < 9) {
-          // Block C (bottom-left) - rows 12-20, cols 0-8
-          localR = r - 12; localC = c;
-        } else if (r >= 12 && c >= 12) {
-          // Block D (bottom-right) - rows 12-20, cols 12-20
-          localR = r - 12; localC = c - 12;
-        } else if (r >= 6 && r < 15 && c >= 6 && c < 15) {
-          // Block S (center) - rows 6-14, cols 6-14
-          localR = r - 6; localC = c - 6;
-        }
-        
-        // Apply bold lines based on 3x3 box boundaries in local coordinates
-        // Thick borders appear on LEFT/TOP of cells at indices 3 and 6
-        const vline = (localC === 3 || localC === 6);
-        const hline = (localR === 3 || localR === 6);
-        const cross = vline && hline;
-        
-        if(vline) cellDiv.dataset.vline = 'true';
-        if(hline) cellDiv.dataset.hline = 'true';
-        if(cross) cellDiv.dataset.cross = 'true';
+        const edges = computeThickEdges(cellObj, (dR, dC) => cellAtGlobal(r + dR, c + dC));
+        applyThickEdges(cellDiv, edges);
 
         // overlap highlight
         if(r>=6 && r<=14 && c>=6 && c<=14) cellDiv.classList.add('overlap');
