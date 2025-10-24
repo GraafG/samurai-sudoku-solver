@@ -276,29 +276,30 @@ function buildUI(){
         }
         cellDiv.className = 'cell';
         
-        // Bold lines at 3x3 box boundaries within each 9x9 block
-        // Determine which 9x9 block this cell belongs to and its local position
+        // Determine which 9x9 block this cell belongs to based on global position
+        // This must be done BEFORE cell data to get correct borders
         let localR = -1, localC = -1;
         
-        // Map global coordinates to local 9x9 coordinates
-        if (r >= 0 && r < 9 && c >= 0 && c < 9) {
-          // Block A (top-left)
+        // Determine block based on global position (order matters for overlap)
+        if (r < 9 && c < 9) {
+          // Block A (top-left) - rows 0-8, cols 0-8
           localR = r; localC = c;
-        } else if (r >= 0 && r < 9 && c >= 12 && c < 21) {
-          // Block B (top-right)
+        } else if (r < 9 && c >= 12) {
+          // Block B (top-right) - rows 0-8, cols 12-20
           localR = r; localC = c - 12;
-        } else if (r >= 12 && r < 21 && c >= 0 && c < 9) {
-          // Block C (bottom-left)
+        } else if (r >= 12 && c < 9) {
+          // Block C (bottom-left) - rows 12-20, cols 0-8
           localR = r - 12; localC = c;
-        } else if (r >= 12 && r < 21 && c >= 12 && c < 21) {
-          // Block D (bottom-right)
+        } else if (r >= 12 && c >= 12) {
+          // Block D (bottom-right) - rows 12-20, cols 12-20
           localR = r - 12; localC = c - 12;
         } else if (r >= 6 && r < 15 && c >= 6 && c < 15) {
-          // Block S (center)
+          // Block S (center) - rows 6-14, cols 6-14
           localR = r - 6; localC = c - 6;
         }
         
-        // Apply bold lines based on 3x3 box boundaries in local coordinates (after cells 2, 5)
+        // Apply bold lines based on 3x3 box boundaries in local coordinates
+        // Thick borders appear on LEFT/TOP of cells at indices 3 and 6
         const vline = (localC === 3 || localC === 6);
         const hline = (localR === 3 || localR === 6);
         const cross = vline && hline;
