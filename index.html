@@ -79,12 +79,10 @@
       pointer-events: none;
     }
 
-    /* thin lines */
-    .cell { box-shadow: inset 0 0 0 1px var(--grid); }
-    /* thick subgrid lines for every 3rd index */
-    .cell[data-vline="true"] { box-shadow: inset -3px 0 0 0 var(--thick), inset 0 0 0 1px var(--grid); }
-    .cell[data-hline="true"] { box-shadow: inset 0 -3px 0 0 var(--thick), inset 0 0 0 1px var(--grid); }
-    .cell[data-cross="true"] { box-shadow: inset -3px 0 0 0 var(--thick), inset 0 -3px 0 0 var(--thick), inset 0 0 0 1px var(--grid); }
+    /* Cell borders - thick lines are applied via JavaScript */
+    .cell {
+      box-sizing: border-box;
+    }
 
     .side { background: var(--panel); border-radius: 18px; padding: 16px; box-shadow: 0 6px 28px rgba(0,0,0,.35); display: grid; gap: 12px; }
     .side h2 { margin: 6px 0 0; font-size: 16px; color: var(--muted); }

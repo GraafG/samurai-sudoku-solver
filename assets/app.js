@@ -313,17 +313,30 @@ let globalCells = []; // 21x21 or 9x9 references to Cell or null
 function computeThickEdges(cell, neighborLookup){
   const edges = { left: false, top: false, right: false, bottom: false };
   if (!cell || !Array.isArray(cell.memberships)) return edges;
+
   // Inspect every board membership so shared cells inherit subgrid boundaries.
   for (const { r, c } of cell.memberships) {
-    if (c === 0 || c === 3 || c === 6) edges.left = true;
-    if (r === 0 || r === 3 || r === 6) edges.top = true;
-    if (edges.left && edges.top) break;
+    // Left edges: columns 0, 3, 6 (start of each 3x3 box)
+    if (c % 3 === 0) edges.left = true;
+
+    // Top edges: rows 0, 3, 6 (start of each 3x3 box)
+    if (r % 3 === 0) edges.top = true;
+
+    // Right edges: columns 2, 5, 8 (end of each 3x3 box)
+    if (c % 3 === 2) edges.right = true;
+
+    // Bottom edges: rows 2, 5, 8 (end of each 3x3 box)
+    if (r % 3 === 2) edges.bottom = true;
+
+    if (edges.left && edges.top && edges.right && edges.bottom) break;
   }
-  // Close the outline whenever no neighbour exists to contribute its own line.
+
+  // Also add edges at grid boundaries (for outer border)
   if (typeof neighborLookup === 'function') {
-    if (!neighborLookup(0, 1)) edges.right = true;
-    if (!neighborLookup(1, 0)) edges.bottom = true;
+    if (!neighborLookup(0, 1)) edges.right = true;   // No right neighbor
+    if (!neighborLookup(1, 0)) edges.bottom = true;  // No bottom neighbor
   }
+
   return edges;
 }
 
