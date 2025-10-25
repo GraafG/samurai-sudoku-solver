@@ -5,6 +5,14 @@
   - Import/export text format
 */
 
+// Constants
+const GRID_SIZE = 9;
+const SUBGRID_SIZE = 3;
+const STANDARD_GRID_SIZE = 9;
+const SAMURAI_GRID_SIZE = 21;
+const SAMURAI_CENTER_START = 6;
+const SAMURAI_CENTER_END = 14;
+
 let currentLang = 'en';
 let currentMode = 'standard'; // 'standard' or 'samurai'
 
@@ -79,6 +87,7 @@ function setMode(mode) {
 }
 
 const boards = {};
+let focusedInputIndex = null; // Track focused input for keyboard navigation
 
 class Cell {
   constructor(val = 0) {
@@ -92,9 +101,9 @@ class Cell {
 class Board {
   constructor(name) {
     this.name = name;
-    this.cells = Array.from({length:9}, _ => Array.from({length:9}, _ => new Cell()));
+    this.cells = Array.from({length:GRID_SIZE}, _ => Array.from({length:GRID_SIZE}, _ => new Cell()));
   }
-  forEach(cb){ for(let r=0;r<9;r++) for(let c=0;c<9;c++) cb(this.cells[r][c], r, c); }
+  forEach(cb){ for(let r=0;r<GRID_SIZE;r++) for(let c=0;c<GRID_SIZE;c++) cb(this.cells[r][c], r, c); }
 }
 
 function initBoards(){
@@ -120,14 +129,16 @@ function initBoards(){
     }
 
     // Overlap-koppelingen: laat hoekcellen verwijzen naar dezelfde Cell als de Ster
+    const overlapSize = SUBGRID_SIZE;
+    const overlapStart = GRID_SIZE - SUBGRID_SIZE;
     // A lr 3x3 -> S ul 3x3
-    for(let r=6;r<9;r++) for(let c=6;c<9;c++) linkCell(boards.A, r, c, boards.S, r-6, c-6);
+    for(let r=overlapStart;r<GRID_SIZE;r++) for(let c=overlapStart;c<GRID_SIZE;c++) linkCell(boards.A, r, c, boards.S, r-overlapStart, c-overlapStart);
     // B ll 3x3 -> S ur 3x3
-    for(let r=6;r<9;r++) for(let c=0;c<3;c++) linkCell(boards.B, r, c, boards.S, r-6, c+6);
+    for(let r=overlapStart;r<GRID_SIZE;r++) for(let c=0;c<overlapSize;c++) linkCell(boards.B, r, c, boards.S, r-overlapStart, c+overlapStart);
     // C ur 3x3 -> S ll 3x3
-    for(let r=0;r<3;r++) for(let c=6;c<9;c++) linkCell(boards.C, r, c, boards.S, r+6, c-6);
+    for(let r=0;r<overlapSize;r++) for(let c=overlapStart;c<GRID_SIZE;c++) linkCell(boards.C, r, c, boards.S, r+overlapStart, c-overlapStart);
     // D ul 3x3 -> S lr 3x3
-    for(let r=0;r<3;r++) for(let c=0;c<3;c++) linkCell(boards.D, r, c, boards.S, r+6, c+6);
+    for(let r=0;r<overlapSize;r++) for(let c=0;c<overlapSize;c++) linkCell(boards.D, r, c, boards.S, r+overlapStart, c+overlapStart);
   }
 }
 
@@ -144,12 +155,12 @@ function candidates(cell){
   for(const m of cell.memberships){
     const b = m.board; const r = m.r; const c = m.c;
     // verwijder alles wat al in rij, kolom of box staat
-    for(let i=0;i<9;i++){
+    for(let i=0;i<GRID_SIZE;i++){
       const vr = b.cells[r][i].v; if(vr) allowed.delete(vr);
       const vc = b.cells[i][c].v; if(vc) allowed.delete(vc);
     }
-    const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
-    for(let rr=br; rr<br+3; rr++) for(let cc=bc; cc<bc+3; cc++){
+    const br = Math.floor(r/SUBGRID_SIZE)*SUBGRID_SIZE, bc = Math.floor(c/SUBGRID_SIZE)*SUBGRID_SIZE;
+    for(let rr=br; rr<br+SUBGRID_SIZE; rr++) for(let cc=bc; cc<bc+SUBGRID_SIZE; cc++){
       const vb = b.cells[rr][cc].v; if(vb) allowed.delete(vb);
     }
   }
@@ -161,20 +172,93 @@ function isValidAll(){
   const all = Object.values(boards);
   for(const b of all){
     // rijen en kolommen
-    for(let i=0;i<9;i++){
+    for(let i=0;i<GRID_SIZE;i++){
       if(!noDup(b.cells[i].map(c=>c.v))) return false;
-      const col = []; for(let r=0;r<9;r++) col.push(b.cells[r][i].v);
+      const col = []; for(let r=0;r<GRID_SIZE;r++) col.push(b.cells[r][i].v);
       if(!noDup(col)) return false;
     }
     // boxen
-    for(let br=0;br<9;br+=3){
-      for(let bc=0;bc<9;bc+=3){
-        const arr=[]; for(let r=br;r<br+3;r++) for(let c=bc;c<bc+3;c++) arr.push(b.cells[r][c].v);
+    for(let br=0;br<GRID_SIZE;br+=SUBGRID_SIZE){
+      for(let bc=0;bc<GRID_SIZE;bc+=SUBGRID_SIZE){
+        const arr=[]; for(let r=br;r<br+SUBGRID_SIZE;r++) for(let c=bc;c<bc+SUBGRID_SIZE;c++) arr.push(b.cells[r][c].v);
         if(!noDup(arr)) return false;
       }
     }
   }
   return true;
+}
+
+// Find and highlight all invalid cells
+function highlightErrors(){
+  // Clear all error highlights first
+  const allInputs = gridEl.querySelectorAll('input');
+  allInputs.forEach(inp => inp.classList.remove('error'));
+
+  const errorCells = new Set();
+  const all = Object.values(boards);
+
+  for(const b of all){
+    // Check rows
+    for(let i=0;i<GRID_SIZE;i++){
+      const row = b.cells[i];
+      const values = new Map(); // value -> [cells]
+      for(let c=0;c<GRID_SIZE;c++){
+        const cell = row[c];
+        if(!cell.v) continue;
+        if(!values.has(cell.v)) values.set(cell.v, []);
+        values.get(cell.v).push(cell);
+      }
+      // Mark duplicates
+      for(const [val, cells] of values){
+        if(cells.length > 1){
+          cells.forEach(cell => errorCells.add(cell));
+        }
+      }
+    }
+
+    // Check columns
+    for(let i=0;i<GRID_SIZE;i++){
+      const values = new Map();
+      for(let r=0;r<GRID_SIZE;r++){
+        const cell = b.cells[r][i];
+        if(!cell.v) continue;
+        if(!values.has(cell.v)) values.set(cell.v, []);
+        values.get(cell.v).push(cell);
+      }
+      for(const [val, cells] of values){
+        if(cells.length > 1){
+          cells.forEach(cell => errorCells.add(cell));
+        }
+      }
+    }
+
+    // Check boxes
+    for(let br=0;br<GRID_SIZE;br+=SUBGRID_SIZE){
+      for(let bc=0;bc<GRID_SIZE;bc+=SUBGRID_SIZE){
+        const values = new Map();
+        for(let r=br;r<br+SUBGRID_SIZE;r++){
+          for(let c=bc;c<bc+SUBGRID_SIZE;c++){
+            const cell = b.cells[r][c];
+            if(!cell.v) continue;
+            if(!values.has(cell.v)) values.set(cell.v, []);
+            values.get(cell.v).push(cell);
+          }
+        }
+        for(const [val, cells] of values){
+          if(cells.length > 1){
+            cells.forEach(cell => errorCells.add(cell));
+          }
+        }
+      }
+    }
+  }
+
+  // Apply error class to inputs
+  errorCells.forEach(cell => {
+    if(cell.el) cell.el.classList.add('error');
+  });
+
+  return errorCells.size === 0;
 }
 function noDup(arr){
   const s=new Set();
@@ -257,16 +341,16 @@ function buildUI(){
   
   if (currentMode === 'standard') {
     // Build 9x9 standard grid
-    globalCells = Array.from({length:9}, _ => Array(9).fill(null));
-    for(let r=0;r<9;r++){
-      for(let c=0;c<9;c++){
+    globalCells = Array.from({length:STANDARD_GRID_SIZE}, _ => Array(STANDARD_GRID_SIZE).fill(null));
+    for(let r=0;r<STANDARD_GRID_SIZE;r++){
+      for(let c=0;c<STANDARD_GRID_SIZE;c++){
         const cellObj = boards.A.cells[r][c];
         const cellDiv = document.createElement('div');
         cellDiv.className = 'cell';
         const edges = computeThickEdges(cellObj, (dR, dC) => {
           const nr = r + dR;
           const nc = c + dC;
-          if (nr < 0 || nr >= 9 || nc < 0 || nc >= 9) return null;
+          if (nr < 0 || nr >= STANDARD_GRID_SIZE || nc < 0 || nc >= STANDARD_GRID_SIZE) return null;
           return boards.A.cells[nr][nc];
         });
         applyThickEdges(cellDiv, edges);
@@ -275,10 +359,19 @@ function buildUI(){
         input.inputMode = 'numeric';
         input.maxLength = 1;
         input.placeholder = '';
+        input.dataset.row = r;
+        input.dataset.col = c;
         input.addEventListener('input', (e)=>{
           const val = e.target.value.replace(/[^1-9]/g,'');
           e.target.value = val;
           cellObj.v = val ? Number(val) : 0;
+          // Highlight errors on input change
+          setTimeout(() => highlightErrors(), 50);
+        });
+        input.addEventListener('keydown', handleCellKeydown);
+        input.addEventListener('focus', (e)=>{
+          const idx = Array.from(gridEl.querySelectorAll('input')).indexOf(e.target);
+          focusedInputIndex = idx;
         });
         cellObj.el = input;
         applyCellToInput(cellObj);
@@ -289,9 +382,9 @@ function buildUI(){
     }
   } else {
     // Build 21x21 Samurai grid
-    globalCells = Array.from({length:21}, _ => Array(21).fill(null));
-    for(let r=0;r<21;r++){
-      for(let c=0;c<21;c++){
+    globalCells = Array.from({length:SAMURAI_GRID_SIZE}, _ => Array(SAMURAI_GRID_SIZE).fill(null));
+    for(let r=0;r<SAMURAI_GRID_SIZE;r++){
+      for(let c=0;c<SAMURAI_GRID_SIZE;c++){
         const cellObj = cellAtGlobal(r,c); // Cell or null
         const cellDiv = document.createElement('div');
         if(!cellObj){
@@ -304,16 +397,25 @@ function buildUI(){
         applyThickEdges(cellDiv, edges);
 
         // overlap highlight
-        if(r>=6 && r<=14 && c>=6 && c<=14) cellDiv.classList.add('overlap');
+        if(r>=SAMURAI_CENTER_START && r<=SAMURAI_CENTER_END && c>=SAMURAI_CENTER_START && c<=SAMURAI_CENTER_END) cellDiv.classList.add('overlap');
 
         const input = document.createElement('input');
         input.inputMode = 'numeric';
-        input.maxLength = 1; 
+        input.maxLength = 1;
         input.placeholder = '';
+        input.dataset.row = r;
+        input.dataset.col = c;
         input.addEventListener('input', (e)=>{
           const val = e.target.value.replace(/[^1-9]/g,'');
           e.target.value = val;
           cellObj.v = val ? Number(val) : 0;
+          // Highlight errors on input change
+          setTimeout(() => highlightErrors(), 50);
+        });
+        input.addEventListener('keydown', handleCellKeydown);
+        input.addEventListener('focus', (e)=>{
+          const idx = Array.from(gridEl.querySelectorAll('input')).indexOf(e.target);
+          focusedInputIndex = idx;
         });
         cellObj.el = input;
         applyCellToInput(cellObj);
@@ -327,11 +429,13 @@ function buildUI(){
 
 function cellAtGlobal(r,c){
   // ster voorrang zodat overlap 1 object blijft
-  if(r>=6 && r<15 && c>=6 && c<15) return boards.S.cells[r-6][c-6];
-  if(r>=0 && r<9 && c>=0 && c<9) return boards.A.cells[r][c];
-  if(r>=0 && r<9 && c>=12 && c<21) return boards.B.cells[r][c-12];
-  if(r>=12 && r<21 && c>=0 && c<9) return boards.C.cells[r-12][c];
-  if(r>=12 && r<21 && c>=12 && c<21) return boards.D.cells[r-12][c-12];
+  const centerEnd = SAMURAI_CENTER_START + GRID_SIZE;
+  const secondGridStart = SAMURAI_GRID_SIZE - GRID_SIZE;
+  if(r>=SAMURAI_CENTER_START && r<centerEnd && c>=SAMURAI_CENTER_START && c<centerEnd) return boards.S.cells[r-SAMURAI_CENTER_START][c-SAMURAI_CENTER_START];
+  if(r>=0 && r<GRID_SIZE && c>=0 && c<GRID_SIZE) return boards.A.cells[r][c];
+  if(r>=0 && r<GRID_SIZE && c>=secondGridStart && c<SAMURAI_GRID_SIZE) return boards.B.cells[r][c-secondGridStart];
+  if(r>=secondGridStart && r<SAMURAI_GRID_SIZE && c>=0 && c<GRID_SIZE) return boards.C.cells[r-secondGridStart][c];
+  if(r>=secondGridStart && r<SAMURAI_GRID_SIZE && c>=secondGridStart && c<SAMURAI_GRID_SIZE) return boards.D.cells[r-secondGridStart][c-secondGridStart];
   return null;
 }
 
@@ -340,6 +444,52 @@ function applyCellToInput(cell){
   cell.el.value = cell.v ? String(cell.v) : '';
   cell.el.readOnly = cell.fixed; // startpos niet per se readOnly, maar handig voor zichtbaarheid
   cell.el.style.opacity = cell.fixed ? .9 : 1;
+}
+
+// Keyboard navigation handler
+function handleCellKeydown(e){
+  const input = e.target;
+  const key = e.key;
+
+  // Delete/Backspace to clear cell
+  if(key === 'Delete' || key === 'Backspace'){
+    if(!input.readOnly){
+      const cellObj = getAllDistinctCells().find(c => c.el === input);
+      if(cellObj){
+        cellObj.v = 0;
+        input.value = '';
+        e.preventDefault();
+      }
+    }
+    return;
+  }
+
+  // Arrow key navigation
+  if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)){
+    e.preventDefault();
+    const allInputs = Array.from(gridEl.querySelectorAll('input'));
+    const currentIndex = allInputs.indexOf(input);
+    if(currentIndex === -1) return;
+
+    const gridSize = currentMode === 'standard' ? STANDARD_GRID_SIZE : SAMURAI_GRID_SIZE;
+    const r = parseInt(input.dataset.row);
+    const c = parseInt(input.dataset.col);
+    let newR = r, newC = c;
+
+    if(key === 'ArrowUp') newR = Math.max(0, r - 1);
+    else if(key === 'ArrowDown') newR = Math.min(gridSize - 1, r + 1);
+    else if(key === 'ArrowLeft') newC = Math.max(0, c - 1);
+    else if(key === 'ArrowRight') newC = Math.min(gridSize - 1, c + 1);
+
+    // Find the input at the new position
+    const targetInput = allInputs.find(inp =>
+      inp.dataset.row === String(newR) && inp.dataset.col === String(newC)
+    );
+    if(targetInput){
+      targetInput.focus();
+      targetInput.select();
+    }
+  }
 }
 
 function syncAllInputs(){
@@ -367,6 +517,7 @@ function setFixedFromCurrent(){
 }
 
 // Historie en stap-voor-stap
+const MAX_HISTORY = 100; // Maximum undo steps
 let history = []; // array van diffs
 let redoStack = [];
 
@@ -388,7 +539,14 @@ function withHistory(action){
   const snap = snapshotState();
   const ok = action();
   const diff = diffStates(snap, snapshotState());
-  if(diff.length){ history.push(diff); redoStack = []; }
+  if(diff.length){
+    history.push(diff);
+    // Limit history size
+    if(history.length > MAX_HISTORY){
+      history.shift(); // Remove oldest entry
+    }
+    redoStack = [];
+  }
   return ok;
 }
 
@@ -413,10 +571,10 @@ function fillAllSingles(){
 // Import en export
 function parseBlock(text){
   const lines = text.trim().split(/\n+/);
-  if(lines.length !== 9) throw new Error('blok verwacht 9 regels');
-  const grid = lines.map(line => {
+  if(lines.length !== GRID_SIZE) throw new Error(t('error-block-lines', {count: lines.length}));
+  const grid = lines.map((line, idx) => {
     const cleaned = line.replace(/[^0-9.]/g,'');
-    if(cleaned.length !== 9) throw new Error('regel heeft geen 9 tekens');
+    if(cleaned.length !== GRID_SIZE) throw new Error(t('error-line-length', {line: idx + 1, count: cleaned.length}));
     return cleaned.split('').map(ch => ch==='.'?0:Number(ch));
   });
   return grid;
@@ -466,16 +624,34 @@ function setStatus(msg, error=false){
   el.style.color = error ? 'var(--err)' : 'var(--muted)';
 }
 
+// Loading indicator helpers
+function showLoading(){
+  const overlay = document.getElementById('loadingOverlay');
+  if(overlay) overlay.classList.add('active');
+  // Disable all buttons
+  document.querySelectorAll('button').forEach(btn => btn.disabled = true);
+}
+function hideLoading(){
+  const overlay = document.getElementById('loadingOverlay');
+  if(overlay) overlay.classList.remove('active');
+  // Re-enable all buttons
+  document.querySelectorAll('button').forEach(btn => btn.disabled = false);
+}
+
 // Bestandsopslag en tekstformaat
 function dumpBlock(b){ return boards[b].cells.map(row=>row.map(c=>c.v||0).join('')).join('\n'); }
 function exportAllString(){
-  return (
-    'A\n' + dumpBlock('A') + '\n\n' +
-    'B\n' + dumpBlock('B') + '\n\n' +
-    'C\n' + dumpBlock('C') + '\n\n' +
-    'D\n' + dumpBlock('D') + '\n\n' +
-    'S\n' + dumpBlock('S') + '\n'
-  );
+  if(currentMode === 'standard'){
+    return dumpBlock('A');
+  } else {
+    return (
+      'A\n' + dumpBlock('A') + '\n\n' +
+      'B\n' + dumpBlock('B') + '\n\n' +
+      'C\n' + dumpBlock('C') + '\n\n' +
+      'D\n' + dumpBlock('D') + '\n\n' +
+      'S\n' + dumpBlock('S') + '\n'
+    );
+  }
 }
 function download(filename, text){
   try{
@@ -512,13 +688,24 @@ async function copyToClipboard(text){
 function parseFileText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim());
   const nine = lines.filter(l=>/^[0-9.]{9}$/.test(l));
+
+  // Standard mode: 9 lines
+  if(nine.length === 9){
+    return {
+      mode: 'standard',
+      A: nine.join('\n')
+    };
+  }
+
+  // Samurai mode: 45 lines
   if(nine.length === 45){
-    const blocks = {A:[],B:[],C:[],D:[],S:[]};
+    const blocks = {mode: 'samurai', A:[],B:[],C:[],D:[],S:[]};
     const keys = ['A','B','C','D','S'];
     for(let k=0;k<5;k++) blocks[keys[k]] = nine.slice(k*9,(k+1)*9).join('\n');
     return blocks;
   }
-  throw new Error('Kon geen 45 regels van 9 tekens vinden.');
+
+  throw new Error(t('error-file-format', {lines: nine.length}));
 }
 
 // Demo: vul met het voorbeeld van de vraag
@@ -675,9 +862,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-clearall').addEventListener('click', ()=>{ clearEverything(); setStatus(t('status-cleared-all')); });
   document.getElementById('btn-reset').addEventListener('click', ()=>{ resetAll(); setStatus(t('status-reset')); });
   document.getElementById('btn-validate').addEventListener('click', ()=>{
-    setStatus(isValidAll() ? t('status-valid') : t('status-invalid'), !isValidAll());
+    const valid = highlightErrors();
+    setStatus(valid ? t('status-valid') : t('status-invalid'), !valid);
   });
-  document.getElementById('btn-solve').addEventListener('click', ()=>{
+  document.getElementById('btn-solve').addEventListener('click', async ()=>{
     // Check if grid has any values
     const cells = getAllDistinctCells();
     const hasValues = cells.some(c => c.v !== 0);
@@ -685,10 +873,14 @@ document.addEventListener('DOMContentLoaded', function() {
       setStatus(t('error-empty-grid'), true);
       return;
     }
+    showLoading();
+    // Use setTimeout to allow UI to update before heavy computation
+    await new Promise(resolve => setTimeout(resolve, 50));
     const t0 = performance.now();
     const ok = withHistory(()=> solveBacktrack());
     const t1 = performance.now();
     syncAllInputs();
+    hideLoading();
     setStatus(ok ? t('status-solved', {time: (t1-t0).toFixed(1)}) : t('status-no-solution'), !ok);
   });
   document.getElementById('btn-step').addEventListener('click', ()=>{
@@ -718,13 +910,14 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-save').addEventListener('click', async ()=>{
     exportToTextareas();
     const text = exportAllString();
-    const ok = download('samurai-sudoku.txt', text);
-    if(ok){ setStatus('Bestand opgeslagen.'); return; }
+    const filename = currentMode === 'standard' ? 'sudoku.txt' : 'samurai-sudoku.txt';
+    const ok = download(filename, text);
+    if(ok){ setStatus(t('status-file-saved')); return; }
     const out = document.getElementById('exportOut');
     const wrap = document.getElementById('exportWrap');
     out.value = text; wrap.open = true;
     const copied = await copyToClipboard(text);
-    setStatus(copied ? 'Kon niet downloaden, tekst naar klembord gekopieerd.' : 'Kon niet downloaden, tekst hieronder staat klaar om te kopiëren.', true);
+    setStatus(copied ? t('error-download-clipboard') : t('error-download-manual'), true);
   });
   document.getElementById('btn-loadfile').addEventListener('click', ()=> document.getElementById('fileLoad').click());
   document.getElementById('fileLoad').addEventListener('change', async (e)=>{
@@ -733,14 +926,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const text = await file.text();
     try{
       const blocks = parseFileText(text);
-      document.getElementById('txtA').value = blocks.A;
-      document.getElementById('txtB').value = blocks.B;
-      document.getElementById('txtC').value = blocks.C;
-      document.getElementById('txtD').value = blocks.D;
-      document.getElementById('txtS').value = blocks.S;
+
+      // Switch to appropriate mode if needed
+      if(blocks.mode && blocks.mode !== currentMode){
+        setMode(blocks.mode);
+      }
+
+      if(blocks.mode === 'standard'){
+        document.getElementById('txtStandard').value = blocks.A;
+      } else {
+        document.getElementById('txtA').value = blocks.A;
+        document.getElementById('txtB').value = blocks.B;
+        document.getElementById('txtC').value = blocks.C;
+        document.getElementById('txtD').value = blocks.D;
+        document.getElementById('txtS').value = blocks.S;
+      }
       loadFromTextareas();
-      setStatus('Bestand geladen.');
-    }catch(err){ setStatus('Fout bij laden: '+err.message, true); }
+      setStatus(t('status-file-loaded-success'));
+    }catch(err){ setStatus(t('error-load', {msg: err.message}), true); }
     finally{ e.target.value=''; }
   });
   document.getElementById('btn-test').addEventListener('click', ()=>{
