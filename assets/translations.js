@@ -53,7 +53,14 @@ const translations = {
     'status-test': 'Self-test: {passed} geslaagd, {failed} mislukt.',
     'error-import': 'Fout: {msg}',
     'error-load': 'Fout bij laden: {msg}',
-    'error-empty-grid': 'Voer eerst enkele waarden in voordat je oplost.'
+    'error-empty-grid': 'Voer eerst enkele waarden in voordat je oplost.',
+    'status-file-saved': 'Bestand opgeslagen.',
+    'error-download-clipboard': 'Kon niet downloaden, tekst naar klembord gekopieerd.',
+    'error-download-manual': 'Kon niet downloaden, tekst hieronder staat klaar om te kopiëren.',
+    'status-file-loaded-success': 'Bestand geladen.',
+    'error-file-format': 'Ongeldig bestandsformaat. Verwacht 9 regels (standaard) of 45 regels (samurai), maar vond {lines} regels.',
+    'error-block-lines': 'Blok heeft niet 9 regels. Gevonden: {count} regels.',
+    'error-line-length': 'Regel {line} heeft niet 9 tekens. Gevonden: {count} tekens.'
   },
   en: {
     'app-title': 'Sudoku Solver',
@@ -108,6 +115,13 @@ const translations = {
     'status-test': 'Self-test: {passed} passed, {failed} failed.',
     'error-import': 'Error: {msg}',
     'error-load': 'Error loading: {msg}',
-    'error-empty-grid': 'Please enter some values before solving.'
+    'error-empty-grid': 'Please enter some values before solving.',
+    'status-file-saved': 'File saved.',
+    'error-download-clipboard': 'Could not download, text copied to clipboard.',
+    'error-download-manual': 'Could not download, text is ready to copy below.',
+    'status-file-loaded-success': 'File loaded.',
+    'error-file-format': 'Invalid file format. Expected 9 lines (standard) or 45 lines (samurai), but found {lines} lines.',
+    'error-block-lines': 'Block does not have 9 lines. Found: {count} lines.',
+    'error-line-length': 'Line {line} does not have 9 characters. Found: {count} characters.'
   }
 };
